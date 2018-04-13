@@ -20,8 +20,6 @@ class Radial_Dial:
 		self.rectangle = rect
 		self.text = text
 		self.range = self.max - self.min
-
-		self.demo_step = demo_step	# TODO - remove this later
 		
 	# Method for drawing the entire radial dial. Draws a semicircle with
 	# hash marks showing different values in the legal range. Pointer shows
@@ -92,6 +90,7 @@ class Mode:
 	DIALS = 1
 	CAMERA = 2
 	DEBUG = 3
+	TACH = 4
 
 class Bar:
 	large_font = pygame.font.SysFont('Comic Sans MS', 30)
@@ -127,9 +126,12 @@ class Timer:
 	large_font = pygame.font.SysFont('Comic Sans MS', 30)
 	def __init__(self):
 		self.time = 0
+		self.start = pygame.time.get_ticks()
 		
 	def update(self):
-		self.time += 1
+		current = pygame.time.get_ticks()
+		elapsed = current - self.start
+		self.time = elapsed / 1000
 
 	def draw(self):
 		time = self.time
@@ -188,49 +190,104 @@ def create_dials():
 	rect = Rectangle(temp_x, temp_y, temp_w, temp_h)
 	temp_gauge = Radial_Dial(100, 300, 50, cur_temp, rect, 'Temp', 10)
 
-	return [tachometer, speedometer, temp_gauge]
+	big_tach_w = screen_width
+	big_tach_h = screen_width / 2
+	big_tach_x = 0
+	big_tach_y = screen_height - big_tach_h - 5
+
+	rect = Rectangle(big_tach_x, big_tach_y, big_tach_w, big_tach_h)
+	big_tachometer = Radial_Dial(0, 4000, 500, cur_rpms, rect, 'RPM', 30)
+
+	return {"tach": tachometer, "speed": speedometer, "temp": temp_gauge, "bigtach": big_tachometer}
 
 
 # Finds and starts the USB webcam that is connected
 def init_webcam():
-	#pygame.camera.init()
-	cam_list = pygame.camera.list_cameras()
-	webcam = pygame.camera.Camera(cam_list[0],(64,48))
-	webcam.start()
-	return webcam
+	try:
+		cam_list = pygame.camera.list_cameras()
+		webcam = pygame.camera.Camera(cam_list[0],(64,48))
+		webcam.start()
+		return webcam
+	except:
+		return None
 
+# These are the functions for getting the actual sensor values. Should also
+# convert raw values to correct units, scale, etc.
 
-# DEMO BEHAVIOR
-# For each of the dials, advance the current value pointer forward. If the max
-# value has been hit, reverse the direction until hitting 0, etc.
+FOOBAR = 0
+
+def get_cur_tach_value():
+# PUT REAL CODE HERE
+#
+#
+#
+	return FOOBAR
+
+def get_cur_speed_value():
+# PUT REAL CODE HERE
+#
+#
+#
+	return FOOBAR
+
+def get_cur_temp_value():
+# PUT REAL CODE HERE
+#
+#
+#
+	global FOOBAR
+	FOOBAR += 1
+	return FOOBAR
+
+def update(dials, clock):
+	update_dials(dials)
+	timer.update()
+
+# Fetches the new values for each dial
 def update_dials(dials):
-	for dial in dials:
-		dial.cur_value += dial.demo_step
+	dials["tach"].cur_value = get_cur_tach_value()
+	dials["speed"].cur_value = get_cur_speed_value()
+	dials["temp"].cur_value = get_cur_temp_value()
+	dials["bigtach"].cur_value = dials["tach"].cur_value
+	for name, dial in dials.items():
 		if dial.cur_value > dial.max:
 			dial.cur_value = dial.max
-			dial.demo_step *= -1
 		elif dial.cur_value < dial.min:
 			dial.cur_value = dial.min
-			dial.demo_step *= -1
 
+
+# Prints an error message to the screen when the camera isn't available
+def print_cam_error(screen):
+		text = "Camera is not available"
+		textsurface = Bar.large_font.render(text, True, (0, 0, 0))
+		text_width, text_height = Bar.large_font.size(text)
+		screen.blit(textsurface, (screen_width / 3, 200))
 
 fuel_value = 0
 timer = Timer()
 
 # Draws the display to the screen. Depending on the mode passed in, different
 # things will be shown.
-def draw_screen(screen, dials, webcam, mode):
+def draw(screen, dials, webcam, mode):
 	# Clear the screen and set the screen background
 	screen.fill(WHITE)
 
 	if mode == Mode.DIALS:
-		for dial in dials:
-			dial.draw()
+		for name, dial in dials.items():
+			if name != "bigtach":
+				dial.draw()
 	elif mode == Mode.CAMERA:
-		#grab image, scale and blit to screen
-		imagen = webcam.get_image()
-		imagen = pygame.transform.scale(imagen,(507,380))
-		screen.blit(imagen,((screen_width - 507) / 2,100))
+		if webcam is not None:
+			#grab image, scale and blit to screen
+			imagen = webcam.get_image()
+			imagen = pygame.transform.scale(imagen,(507,380))
+			screen.blit(imagen,((screen_width - 507) / 2,100))
+		else:
+			print_cam_error(screen)
+	elif mode == Mode.TACH:
+		dials["bigtach"].draw()
+		pygame.display.flip()
+		return
 
 	global fuel_value, timer
 	fuel = Bar(0, 100, Rect(50,50,200, 40), fuel_value)
@@ -238,7 +295,6 @@ def draw_screen(screen, dials, webcam, mode):
 	fuel.draw()
 
 	timer.draw()
-	timer.update()
 
 	pygame.display.flip()
 
@@ -248,7 +304,6 @@ def main():
 	size = [screen_width, screen_height]
 	screen = pygame.display.set_mode(size)
 
-	paused = False
 	done = False
 	clock = pygame.time.Clock()
 
@@ -260,27 +315,25 @@ def main():
 
 	while not done:
 		clock.tick(30)
-     
+
 		for event in pygame.event.get():
 			if event.type == pygame.QUIT:
 				done=True
 			if event.type == pygame.KEYDOWN:
-				if event.key == pygame.K_SPACE:
-					paused = not paused;
-				elif event.key == pygame.K_c:
+				if event.key == pygame.K_1:
 					mode = Mode.CAMERA
-				elif event.key == pygame.K_d:
-					mode = Mode.DEBUG
-				else:
+				elif event.key == pygame.K_2:
+					mode = Mode.TACH
+				elif event.key == pygame.K_3:
 					mode = Mode.DIALS
+				elif event.key == pygame.K_w:
+					webcam = init_webcam()
 
-		draw_screen(screen, dials, webcam, mode)
-		if paused:
-			continue
-
-		update_dials(dials)
+		update(dials, clock)
+		draw(screen, dials, webcam, mode)
 	
-	webcam.stop()
+	if webcam is not None:
+		webcam.stop()
 	pygame.quit() 
 	sys.exit()
 
